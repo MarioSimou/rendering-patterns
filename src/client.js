@@ -1,31 +1,23 @@
 import { createRoot } from 'react-dom/client'
-import Todos from '../.build/pages/Todos'
-import About from '../.build/pages/About'
-import Todo from '../.build/pages/Todo'
-import { createBrowserRouter } from './createBrowserRouter'
+import { createFromFetch } from 'react-server-dom-webpack/client'
 
-const domNode = document.getElementById('root')
-const root = createRoot(domNode)
+const node = document.getElementById('root')
+const root = createRoot(node)
 
-const router = createBrowserRouter({
-    routes: [
-        {
-            pathname: '/',
-            component: Todos,
-        },
-        {
-            pathname: '/todos',
-            component: Todos,
-        },
-        {
-            pathname: '/about',
-            component: About,
-        },
-        {
-            pathname: '/todos/1',
-            component: Todo,
-        },
-    ],
+const fetchTree = async path => createFromFetch(fetch(`http://localhost:3000/rsc?path=${encodeURIComponent(path)}`))
+
+const path = window.location.pathname
+root.render(await fetchTree(path))
+
+window.addEventListener('click', async e => {
+    const target = e.target
+
+    if (target.tagName === 'A') {
+        e.preventDefault()
+
+        const href = target.getAttribute('href')
+        window.history.pushState({}, '', href)
+        const tree = await fetchTree(href)
+        root.render(tree)
+    }
 })
-
-root.render(router)

@@ -1,32 +1,31 @@
 import Title from '../components/Title'
-import Head from '../components/Head'
+import { Suspense } from 'react'
 
-export default function Todos({ todos }) {
-    return (
-        <>
-            <Head>
-                <title>Todos</title>
-                <meta name="description" content="Todos" />
-            </Head>
-            <div className="p-8">
-                <Title>Todos</Title>
-                <ul>
-                    {todos.map((todo, i) => (
-                        <li key={todo.id}>
-                            {i + 1}. {todo.title}
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </>
-    )
-}
+const delay = sec => new Promise(resolve => setTimeout(resolve, sec * 1000))
 
-export const getServerSideProps = async req => {
+const TodosList = async () => {
+    await delay(3)
     const res = await fetch('http://localhost:3001/todos')
     const todos = await res.json()
 
-    return {
-        todos,
-    }
+    return (
+        <ul>
+            {todos.map((todo, i) => (
+                <li key={todo.id}>
+                    {i + 1}. {todo.title}
+                </li>
+            ))}
+        </ul>
+    )
+}
+
+export default async function Todos() {
+    return (
+        <div>
+            <Title>Todos</Title>
+            <Suspense fallback={<div>Fetching todos...</div>}>
+                <TodosList />
+            </Suspense>
+        </div>
+    )
 }

@@ -5,9 +5,9 @@
     "main": "index.js",
     "type": "module",
     "scripts": {
-        "start:server": "node --watch-path=src ./src/server.js",
+        "start:server": "node --conditions react-server --watch-path=src ./src/server.js",
         "api": "json-server --port=3001 ./db.json",
-        "build:css": "tailwindcss -i style.css -o public/style.css",
+        "build:css": "tailwindcss -i style.css -o .build/style.css",
         "build:css:watch": "pnpm build:css --watch",
         "dev": "run-p start:server build:css:watch"
     },
@@ -16,13 +16,14 @@
     "license": "ISC",
     "dependencies": {
         "express": "^4.18.2",
-        "json-server": "^0.17.4",
-        "npm-run-all": "^4.1.5",
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0"
+        "react": "18.3.0-canary-1d5667a12-20240102",
+        "react-dom": "18.3.0-canary-1d5667a12-20240102",
+        "react-server-dom-webpack": "18.3.0-canary-f1039be4a-20240107"
     },
     "devDependencies": {
         "esbuild": "^0.19.11",
+        "json-server": "0.17.4",
+        "npm-run-all": "^4.1.5",
         "tailwindcss": "^3.4.0"
     }
 }

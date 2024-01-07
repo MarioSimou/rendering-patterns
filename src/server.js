@@ -1,19 +1,24 @@
 import express from 'express'
-import { fileURLToPath } from 'url'
 import path from 'path'
-import { renderToString } from 'react-dom/server'
 import * as esbuild from 'esbuild'
-import fs from 'node:fs/promises'
+import ServerRouter from '../.build/components/ServerRouter.js'
+import ReactServerDom from 'react-server-dom-webpack/server.node'
 
-const app = express()
-const PORT = process.env.PORT || 3000
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const watchJsx = async () => {
+const watchBuild = async () => {
     const ctx = await esbuild.context({
         entryPoints: ['./src/**/*.jsx'],
+        bundle: true,
+        outdir: '.build',
+        jsx: 'automatic',
+        jsxDev: true,
+        platform: 'neutral',
+        target: 'esnext',
+        format: 'esm',
+        loader: { '.jsx': 'jsx' },
+    })
+
+    const clientCtx = await esbuild.context({
+        entryPoints: ['./src/client.js'],
         bundle: true,
         outdir: '.build',
         jsx: 'automatic',
@@ -21,96 +26,68 @@ const watchJsx = async () => {
         platform: 'browser',
         target: 'esnext',
         format: 'esm',
-        loader: { '.jsx': 'jsx' },
+        loader: { '.js': 'js' },
+        splitting: true,
+        banner: {
+            js: 'window.__webpack_require__ = id => import(id)',
+        },
     })
 
-    return ctx.watch()
+    return await Promise.all([ctx.watch(), clientCtx.watch()])
 }
 
-const watchClientEntrypoint = async () => {
-    const ctx = await esbuild.context({
-        entryPoints: ['./src/client.js'],
-        bundle: true,
-        outdir: './public',
-        jsx: 'automatic',
-        jsxDev: true,
-        platform: 'browser',
-        target: 'esnext',
-        format: 'esm',
-        loader: { '.js': 'jsx' },
+const createServer = async () => {
+    const app = express()
+    const PORT = process.env.PORT || 3000
+
+    app.use('/public', express.static(path.resolve(process.cwd(), '.build')))
+
+    // This endpoint is called when a user navigates to a new page. Based on the current page, it will return a serialized form of the components executed on the server
+    app.get('/rsc', async (req, res) => {
+        // The router identifies which page to load. It will return the page as a JSX element
+        const rootTree = await ServerRouter(req)
+        // We need to serialize the tree in order to send the serialized form of the tree to the client, which in turn will hydrate the dom.
+        const stream = ReactServerDom.renderToPipeableStream(rootTree)
+        return stream.pipe(res)
     })
 
-    return ctx.watch()
-}
-
-app.use(express.static(path.resolve(process.cwd(), 'public')))
-
-const pages = {
-    '/': {
-        title: 'Todos',
-        path: '../.build/pages/Todos.js',
-    },
-    '/todos': {
-        title: 'Todos',
-        path: '../.build/pages/Todos.js',
-    },
-    '/about': {
-        title: 'About',
-        path: '../.build/pages/About.js',
-    },
-    '/todos/1': {
-        title: 'Todo',
-        path: '../.build/pages/Todo.js',
-    },
-}
-
-app.get('*', async (req, res) => {
-    if (req.path.endsWith('.json')) {
-        const path = req.path.replace(/^(.+).json$/, '$1')
-        const page = pages[path]
-
-        const { getServerSideProps } = await import(page.path)
-        if (!getServerSideProps) {
-            return res.json({ pageProps: {} })
+    // This endpoint is called on the initial load.
+    app.get('*', async (req, res, next) => {
+        if (req.path.startsWith('/rsc')) {
+            return next()
         }
 
-        const pageProps = await getServerSideProps(req)
-        return res.json({ pageProps })
-    }
+        return res.contentType('html').send(`
+        <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charSet="utf-8"></meta>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0"></meta>
+                <title>Todos</title>
+                <link rel="stylesheet" href="/public/style.css"></link>
+            </head>
+            <body> 
+                <div id="root">
+                    <header class="py-4 px-8 bg-gray-100 shadow-md w-full">
+                        <nav class="flex gap-4 max-w-screen-lg mx-auto">
+                            <a href="/todos">Todos</a>
+                            <a href="/todos/1">Todo</a>
+                            <a href="/about">About</a>
+                        </nav>
+                    </header>
+                    <main class="grid gap-12 py-8 px-8 mx-auto lg:px-0 lg:max-w-screen-lg">
+                        <div>Loading...</div>
+                    </main>
+                </div>
+            </body>
+            </html>     
+            <script type="module" src="/public/client.js"></script>
+        `)
+    })
 
-    const path = req.path
-    const page = pages[path]
+    await watchBuild()
 
-    if (!page) {
-        return res.status(404).send(`Page for '${path}' not found`)
-    }
+    app.listen(PORT, () => console.log(`The app is running on port ${PORT}`))
+}
 
-    const { default: Page, getServerSideProps } = await import(page.path)
-    let pageProps
-
-    if (getServerSideProps) {
-        pageProps = await getServerSideProps(req)
-    }
-
-    const { default: Html } = await import('../.build/components/Html.js')
-    const { default: App } = await import('../.build/pages/_app.js')
-
-    const html = renderToString(
-        Html({
-            title: page.title,
-            stylesheet: '/style.css',
-            clientEntrypoint: '/client.js',
-            pageProps,
-            children: App({
-                pageProps,
-                page: Page,
-            }),
-        })
-    )
-    return res.contentType('html').send(html)
-})
-
-await watchJsx()
-await watchClientEntrypoint()
-
-app.listen(PORT, () => console.log(`The app is running on port ${PORT}`))
+await createServer()
