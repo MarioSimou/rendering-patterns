@@ -1,11 +1,10 @@
-import Link from './Link'
 export default function Header() {
     return (
-        <header className="py-4 px-8 max-w-screen-xl lg:mx-auto bg-gray-100 shadow-md">
-            <nav className="flex gap-4">
-                <Link href="/todos">Todos</Link>
-                <Link href="/todos/1">Todo</Link>
-                <Link href="/about">About</Link>
+        <header className="py-4 px-8 bg-gray-100 shadow-md w-full">
+            <nav className="flex gap-4 max-w-screen-lg mx-auto">
+                <a href="/todos">Todos</a>
+                <a href="/todos/1">Todo</a>
+                <a href="/about">About</a>
             </nav>
         </header>
     )

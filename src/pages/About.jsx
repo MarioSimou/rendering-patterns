@@ -1,16 +1,9 @@
 import Title from '../components/Title'
-import Head from '../components/Head'
 
-export default function About() {
+export default async function About() {
     return (
-        <>
-            <Head>
-                <title>About</title>
-                <meta name="description" content="About page" />
-            </Head>
-            <div>
-                <Title>About</Title>
-            </div>
-        </>
+        <div>
+            <Title>About</Title>
+        </div>
     )
 }

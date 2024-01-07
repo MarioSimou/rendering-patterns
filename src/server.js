@@ -1,19 +1,13 @@
 import express from 'express'
-import { fileURLToPath } from 'url'
 import path from 'path'
 import { renderToString } from 'react-dom/server'
 import * as esbuild from 'esbuild'
-import fs from 'node:fs/promises'
+import { serialize } from './rsc.js'
+import ServerRouter from '../.build/components/ServerRouter.js'
 
-const app = express()
-const PORT = process.env.PORT || 3000
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const watchJsx = async () => {
+const watchBuild = async () => {
     const ctx = await esbuild.context({
-        entryPoints: ['./src/**/*.jsx'],
+        entryPoints: ['./src/**/*.jsx', './src/client.js'],
         bundle: true,
         outdir: '.build',
         jsx: 'automatic',
@@ -21,96 +15,48 @@ const watchJsx = async () => {
         platform: 'browser',
         target: 'esnext',
         format: 'esm',
-        loader: { '.jsx': 'jsx' },
+        loader: { '.jsx': 'jsx', '.js': 'js' },
     })
 
     return ctx.watch()
 }
 
-const watchClientEntrypoint = async () => {
-    const ctx = await esbuild.context({
-        entryPoints: ['./src/client.js'],
-        bundle: true,
-        outdir: './public',
-        jsx: 'automatic',
-        jsxDev: true,
-        platform: 'browser',
-        target: 'esnext',
-        format: 'esm',
-        loader: { '.js': 'jsx' },
+const createServer = async () => {
+    const app = express()
+    const PORT = process.env.PORT || 3000
+
+    app.use('/public', express.static(path.resolve(process.cwd(), '.build')))
+
+    // This endpoint is called when a user navigates to a new page. Based on the current page, it will return a serialized form of the components executed on the server
+    app.get('/rsc', async (req, res) => {
+        // The router identifies which page to load. It will return the page as a JSX element
+        const rootTree = await ServerRouter(req)
+        // We need to serialize the tree in order to send the serialized form of the tree to the client, which in turn will hydrate the dom.
+        const payload = await serialize(rootTree)
+        return res.json(payload).end()
     })
 
-    return ctx.watch()
-}
-
-app.use(express.static(path.resolve(process.cwd(), 'public')))
-
-const pages = {
-    '/': {
-        title: 'Todos',
-        path: '../.build/pages/Todos.js',
-    },
-    '/todos': {
-        title: 'Todos',
-        path: '../.build/pages/Todos.js',
-    },
-    '/about': {
-        title: 'About',
-        path: '../.build/pages/About.js',
-    },
-    '/todos/1': {
-        title: 'Todo',
-        path: '../.build/pages/Todo.js',
-    },
-}
-
-app.get('*', async (req, res) => {
-    if (req.path.endsWith('.json')) {
-        const path = req.path.replace(/^(.+).json$/, '$1')
-        const page = pages[path]
-
-        const { getServerSideProps } = await import(page.path)
-        if (!getServerSideProps) {
-            return res.json({ pageProps: {} })
+    // This endpoint is called on the initial load.
+    app.get('*', async (req, res, next) => {
+        if (req.path.startsWith('/rsc')) {
+            return next()
         }
 
-        const pageProps = await getServerSideProps(req)
-        return res.json({ pageProps })
-    }
+        // The router identifies which page to load. It will return the page as a JSX element
+        const rootTree = await ServerRouter(req)
 
-    const path = req.path
-    const page = pages[path]
+        // We need to serialize the tree in order to send the serialized form of the tree to the client, which in turn will hydrate the dom.
+        const payload = await serialize(rootTree)
 
-    if (!page) {
-        return res.status(404).send(`Page for '${path}' not found`)
-    }
+        // Convert the JSX tree into html. We also inject a script with the serialized form of the tree.
+        let html = renderToString(rootTree)
+        html += `<script>window.__SERIALIZED_REACT_TREE__ =${JSON.stringify(payload).replace(/</g, '\\u003c')}</script>`
+        return res.contentType('html').send(html)
+    })
 
-    const { default: Page, getServerSideProps } = await import(page.path)
-    let pageProps
+    await watchBuild()
 
-    if (getServerSideProps) {
-        pageProps = await getServerSideProps(req)
-    }
+    app.listen(PORT, () => console.log(`The app is running on port ${PORT}`))
+}
 
-    const { default: Html } = await import('../.build/components/Html.js')
-    const { default: App } = await import('../.build/pages/_app.js')
-
-    const html = renderToString(
-        Html({
-            title: page.title,
-            stylesheet: '/style.css',
-            clientEntrypoint: '/client.js',
-            pageProps,
-            children: App({
-                pageProps,
-                page: Page,
-            }),
-        })
-    )
-    return res.contentType('html').send(html)
-})
-
-await watchJsx()
-await watchClientEntrypoint()
-
-app.listen(PORT, () => console.log(`The app is running on port ${PORT}`))
+await createServer()
